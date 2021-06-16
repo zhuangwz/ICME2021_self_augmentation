@@ -17,8 +17,6 @@ change parameters ['input_dir', 'output_dir', 'checkpoint_path']
 
 ##### Running the code
 
-`python attack.py`: generate adversarial examples for single model.
-
-`python attack_multi_gpu.py`: generate adversarial examples for ensemble model.
+`python attack.py`: generate adversarial examples.
 
 `python eval.py`: evaluate the attack success rate.
