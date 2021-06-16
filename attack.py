@@ -73,6 +73,10 @@ kernel_11 = gkern(11, 3).astype(np.float32)
 stack_kernel_11 = np.stack([kernel_11, kernel_11, kernel_11]).swapaxes(2, 0)
 stack_kernel_11 = np.expand_dims(stack_kernel_11, 3)
 
+kernel_15 = gkern(15, 3).astype(np.float32)
+stack_kernel_15 = np.stack([kernel_15, kernel_15, kernel_15]).swapaxes(2, 0)
+stack_kernel_15 = np.expand_dims(stack_kernel_15, 3)
+
 
 def load_images(input_dir, batch_shape):
     """Read png images from input directory in batches.
@@ -165,13 +169,9 @@ def graph(x, y, i, x_max, x_min, grad):
 
     x_dev = x
     one_hot = y
-    # deviation augmentation
     if FLAGS.use_dev:
-        num = FLAGS.sample_num * FLAGS.batch_size
-        d_shape = [num, FLAGS.image_height, FLAGS.image_width, 3]
-        d = tf.random_normal(shape=d_shape)
-        x_dev = tf.tile(x_dev, [FLAGS.sample_num, 1, 1, 1])
-        x_dev = x_dev + FLAGS.sample_variance * tf.sign(d)
+        d_shape = [FLAGS.sample_num, FLAGS.image_height, FLAGS.image_width, 3]
+        x_dev = x_dev + FLAGS.sample_variance * tf.sign(tf.random_normal(shape=d_shape))
         one_hot = tf.tile(y, [FLAGS.sample_num, 1])
 
     logits_v3, end_points_v3 = inceptionv3_model(x_dev)
@@ -180,9 +180,9 @@ def graph(x, y, i, x_max, x_min, grad):
     logits_152, end_points_152 = resnet152_model(x_dev)
 
     # single model
-    logits, auxlogits = logits_v2, end_points_v2['AuxLogits']
-    cross_entropy = tf.losses.softmax_cross_entropy(one_hot, logits) + \
-                    tf.losses.softmax_cross_entropy(one_hot, auxlogits, weights=0.4)
+    logits, auxlogits = logits_v3, end_points_v3['AuxLogits']
+    cross_entropy = tf.losses.softmax_cross_entropy(one_hot, logits)
+    noise = tf.gradients(cross_entropy, x)[0]
 
     # SI-TIM
     x_nes_2 = 1 / 2 * x_dev
@@ -190,29 +190,27 @@ def graph(x, y, i, x_max, x_min, grad):
     logits_v4_2, end_points_v4_2 = inceptionv4_model(x_nes_2)
     logits_v2_2, end_points_v2_2 = inceptionresnetv2_model(x_nes_2)
     logits_152_2, end_points_152_2 = resnet152_model(x_nes_2)
-    logits_2, auxlogits_2 = logits_v2_2, end_points_v2_2['AuxLogits']
-    cross_entropy_2 = tf.losses.softmax_cross_entropy(one_hot, logits_2) + \
-                      tf.losses.softmax_cross_entropy(one_hot, auxlogits_2, weights=0.4)
+    logits_2, auxlogits_2 = logits_v3_2, end_points_v3_2['AuxLogits']
+    cross_entropy_2 = tf.losses.softmax_cross_entropy(one_hot, logits_2)
+    noise += tf.gradients(cross_entropy_2, x)[0]
 
     x_nes_4 = 1 / 4 * x_dev
     logits_v3_4, end_points_v3_4 = inceptionv3_model(x_nes_4)
     logits_v4_4, end_points_v4_4 = inceptionv4_model(x_nes_4)
     logits_v2_4, end_points_v2_4 = inceptionresnetv2_model(x_nes_4)
     logits_152_4, end_points_152_4 = resnet152_model(x_nes_4)
-    logits_4, auxlogits_4 = logits_v2_4, end_points_v2_4['AuxLogits']
-    cross_entropy_4 = tf.losses.softmax_cross_entropy(one_hot, logits_4) + \
-                      tf.losses.softmax_cross_entropy(one_hot, auxlogits_4, weights=0.4)
+    logits_4, auxlogits_4 = logits_v3_4, end_points_v3_4['AuxLogits']
+    cross_entropy_4 = tf.losses.softmax_cross_entropy(one_hot, logits_4)
+    noise += tf.gradients(cross_entropy_4, x)[0]
 
     x_nes_8 = 1 / 8 * x_dev
     logits_v3_8, end_points_v3_8 = inceptionv3_model(x_nes_8)
     logits_v4_8, end_points_v4_8 = inceptionv4_model(x_nes_8)
     logits_v2_8, end_points_v2_8 = inceptionresnetv2_model(x_nes_8)
     logits_152_8, end_points_152_8 = resnet152_model(x_nes_8)
-    logits_8, auxlogits_8 = logits_v2_8, end_points_v2_8['AuxLogits']
-    cross_entropy_8 = tf.losses.softmax_cross_entropy(one_hot, logits_8) + \
-                      tf.losses.softmax_cross_entropy(one_hot, auxlogits_8, weights=0.4)
-
-    cross_entropy = cross_entropy + cross_entropy_2 + cross_entropy_4 + cross_entropy_8
+    logits_8, auxlogits_8 = logits_v3_8, end_points_v3_8['AuxLogits']
+    cross_entropy_8 = tf.losses.softmax_cross_entropy(one_hot, logits_8)
+    noise += tf.gradients(cross_entropy_8, x)[0]
 
     # self-ensemble
     if FLAGS.use_self:
@@ -221,23 +219,21 @@ def graph(x, y, i, x_max, x_min, grad):
         logits_v4_9, end_points_v4_9 = inceptionv4_model(x_conv_9)
         logits_v2_9, end_points_v2_9 = inceptionresnetv2_model(x_conv_9)
         logits_152_9, end_points_152_9 = resnet152_model(x_conv_9)
-        logits_9, auxlogits_9 = logits_v2_9, end_points_v2_9['AuxLogits']
-        cross_entropy_9 = tf.losses.softmax_cross_entropy(one_hot, logits_9) + \
-                          tf.losses.softmax_cross_entropy(one_hot, auxlogits_9, weights=0.4)
+        logits_9, auxlogits_9 = logits_v3_9, end_points_v3_9['AuxLogits']
+        cross_entropy_9 = tf.losses.softmax_cross_entropy(one_hot, logits_9)
+        noise += tf.gradients(cross_entropy_9, x)[0]
 
         x_conv_11 = tf.nn.depthwise_conv2d(x_dev, stack_kernel_11, strides=[1, 1, 1, 1], padding='SAME')
         logits_v3_11, end_points_v3_11 = inceptionv3_model(x_conv_11)
         logits_v4_11, end_points_v4_11 = inceptionv4_model(x_conv_11)
         logits_v2_11, end_points_v2_11 = inceptionresnetv2_model(x_conv_11)
         logits_152_11, end_points_152_11 = resnet152_model(x_conv_11)
-        logits_11, auxlogits_11 = logits_v2_11, end_points_v2_11['AuxLogits']
-        cross_entropy_11 = tf.losses.softmax_cross_entropy(one_hot, logits_11) + \
-                           tf.losses.softmax_cross_entropy(one_hot, auxlogits_11, weights=0.4)
+        logits_11, auxlogits_11 = logits_v3_11, end_points_v3_11['AuxLogits']
+        cross_entropy_11 = tf.losses.softmax_cross_entropy(one_hot, logits_11)
+        noise += tf.gradients(cross_entropy_11, x)[0]
 
-        cross_entropy = cross_entropy + cross_entropy_9 + cross_entropy_11
-
-    noise = tf.gradients(cross_entropy, x)
-    noise = tf.expand_dims(tf.reduce_mean(tf.reduce_mean(noise, axis=0), 0), 0)
+    if FLAGS.use_dev:
+        noise = tf.expand_dims(tf.reduce_mean(noise, axis=0), 0)
 
     # TIM
     noise = tf.nn.depthwise_conv2d(noise, stack_kernel_11, strides=[1, 1, 1, 1], padding='SAME')
