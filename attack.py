@@ -1,5 +1,5 @@
 # coding=utf-8
-"""Implementation of SI-NI-FGSM attack."""
+"""Implementation of SA-SIM attack."""
 
 from __future__ import absolute_import
 from __future__ import division
